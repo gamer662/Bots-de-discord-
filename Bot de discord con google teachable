@@ -1,0 +1,97 @@
+import discord
+from discord.ext import commands
+import tf_keras as keras  # Importando tf-keras – una versión de Keras compatible con modelos .h5
+from tf_keras.models import load_model  # Importando la función load_model de tf_keras, que nos permite abrir el modelo
+from PIL import Image, ImageOps  # Instalando pillow en vez de PIL
+import numpy as np
+import io # CAMBIO 1: Importamos io para leer los bytes del archivo
+
+intents = discord.Intents.default()
+intents.message_content = True
+import os
+
+# Fuerza a TensorFlow a usar Keras 2 (Legacy), compatible con modelos antiguos
+os.environ['TF_USE_LEGACY_KERAS'] = '1'
+
+import tensorflow as tf
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(script_dir, 'keras_model.h5')
+
+# Carga directa del modelo
+model = tf.keras.models.load_model(model_path, compile=False)
+
+print('¡Modelo cargado con éxito!')
+
+# Gets the directory where your script is located
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(BASE_DIR, "keras_model.h5")
+
+# Pass model_path to load_model
+model = tf.keras.models.load_model(model_path)
+bot = commands.Bot(command_prefix='$', intents=intents)
+
+@bot.event  
+async def on_ready():
+    print(f'We have logged in as {bot.user}')
+
+@bot.command()
+async def hello(ctx):
+    await ctx.send(f'Hi! I am a bot {bot.user}!')
+
+@bot.command()
+async def heh(ctx, count_heh = 5):
+    await ctx.send("he" * count_heh)
+
+@bot.command()
+async def clasificar(ctx):
+    await ctx.send("Envíame una foto con el comando cclasificar y te diré qué es")
+
+@bot.command()
+async def cclasificar(ctx, image_attachment: discord.Attachment): # CAMBIO 2: Renombrado por claridad
+    if image_attachment.content_type.startswith('image/'):
+        await ctx.send(f'Clasificando la imagen {image_attachment.filename}...')
+        # Deshabilitar la notación científica para mayor claridad
+        np.set_printoptions(suppress=True)
+
+        # Cargando el modelo
+        model = load_model("keras_model.h5", compile=False)
+
+        # Cargando las etiquetas
+        class_names = open("labels.txt", "r").readlines()
+
+        # Creación de la matriz con la forma correcta para alimentar el modelo Keras
+        data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
+
+        # CAMBIO 3: Descargar la imagen de Discord y convertirla a formato PIL
+        image_bytes = await image_attachment.read()
+        pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+        # Redimensionar la imagen para que tenga al menos 224x224px y luego recortarla desde el centro
+        size = (224, 224)
+        processed_image = ImageOps.fit(pil_image, size, Image.Resampling.LANCZOS) # CAMBIO 4: Usar la imagen PIL
+
+        # Convertir la imagen en una matriz NumPy
+        image_array = np.asarray(processed_image)
+
+        # Normalizando la imagen
+        normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
+
+        # Cargando la imagen dentro del array
+        data[0] = normalized_image_array
+
+        # Prediciendo con el modelo
+        prediction = model.predict(data)
+        index = np.argmax(prediction)
+        class_name = class_names[index]
+        confidence_score = prediction[0][index]
+        if confidence_score >= 50.0:
+            await ctx.send(f'¡Clasificación completada! La imagen es un {class_name.strip()} con una puntuación de confianza del {confidence_score:.2f}.')
+        elif confidence_score < 50.0:
+            await ctx.send('La puntuación de confianza es baja, por favor, envía otra imagen para una mejor clasificación.')
+    else:
+        await ctx.send('Por favor, envía una imagen válida.')
+
+# CAMBIO 5: Ocultado el token original por motivos de seguridad.bot.run("Token secreto")
+
+bot.run("Mi token secreto va aqui")
