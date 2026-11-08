@@ -1,0 +1,46 @@
+# Importar las bibliotecas necesarias
+import asyncio  # Permite ejecutar tareas sin bloquear el bot (hilos y subprocesos asíncronos)
+# Permite leer variables de entorno, como el token del bot
+
+import discord  # Biblioteca para trabajar con la API de Discord
+import requests  # Biblioteca para hacer solicitudes HTTP
+from discord.ext import commands  # Módulo para crear comandos del bot
+
+# Inicializar el objeto del bot
+intents = discord.Intents.default()  # Permisos básicos del bot
+intents.message_content = True  # Habilitar la lectura del contenido de los mensajes (necesario para los comandos con "!")
+bot = commands.Bot(command_prefix="!", intents=intents)  # Crear el bot con el prefijo "!"
+
+# Dirección de la API que devuelve un dato curioso aleatorio en inglés
+FACT_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en"
+
+
+# Función para obtener un dato curioso desde la API
+def get_fact() -> str:
+    """Obtiene un dato curioso aleatorio (llamada bloqueante; ejecutar en un hilo)."""
+    try:
+        response = requests.get(FACT_URL, timeout=10)  # Hacer la solicitud GET; se rinde si tarda más de 10 segundos
+        response.raise_for_status()  # Lanzar un error si la respuesta no es exitosa (por ejemplo, 404 o 500)
+        return response.json()["text"]  # Convertir la respuesta JSON y devolver solo el campo "text"
+    except (requests.RequestException, KeyError, ValueError):  # Error de red, campo "text" ausente o JSON inválido
+        return "No se pudo obtener el dato curioso. Inténtalo más tarde."  # Mensaje de error para el usuario
+
+
+# Función para la síntesis de voz
+async def speak(text: str) -> None:
+    """Lee el texto en voz alta con el comando 'say' de macOS sin bloquear el bot."""
+    proc = await asyncio.create_subprocess_exec("say", text)  # Lanzar 'say' como proceso aparte (el bot sigue funcionando)
+    await proc.wait()  # Esperar a que termine de hablar sin congelar el bot
+
+
+# Comando !fact: obtiene un dato curioso, lo envía al canal y lo lee en voz alta
+@bot.command()
+async def fact(ctx: commands.Context):  # ctx contiene la información del mensaje (canal, autor, etc.)
+    """Envía un dato curioso al canal y lo lee en voz alta."""
+    info = await asyncio.to_thread(get_fact)  # Ejecutar la petición HTTP en otro hilo para no bloquear el bot
+    await ctx.send(f"The interesting detail is this: {info}")  # Enviar el dato curioso al canal de Discord
+    await speak(info)  # Leer el dato en voz alta por los altavoces del Mac
+
+
+# Iniciar el bot con el token guardado en la variable de entorno DISCORD_TOKEN
+bot.run("Mi token secreto va aquí)
